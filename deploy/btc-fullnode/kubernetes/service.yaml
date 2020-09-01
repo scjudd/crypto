@@ -1,0 +1,9 @@
+# Headless service for btc-fullnode StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: btc-fullnode
+spec:
+  clusterIP: None
+  selector:
+    app: btc-fullnode

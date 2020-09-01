@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: btc-fullnode
+  labels:
+    app: btc-fullnode
+spec:
+  selector:
+    matchLabels:
+      app: btc-fullnode
+  serviceName: btc-fullnode
+  template:
+    metadata:
+      name: btc-fullnode
+      labels:
+        app: btc-fullnode
+    spec:
+      initContainers:
+      - name: chown-data
+        image: busybox:latest
+        command: ["chown", "-R", "1000:1000", "/var/lib/bitcoind"]
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/bitcoind
+      containers:
+      - name: btc-fullnode
+        image: registry.digitalocean.com/scjudd/btc-fullnode:v0.20.0
+        ports:
+        - name: p2p
+          containerPort: 8333
+        - name: rpc
+          containerPort: 8332
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/bitcoind
+        securityContext:
+          runAsUser: 1000
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - bitcoin-cli
+              - -conf=/etc/bitcoin/bitcoin.conf
+              - stop
+      enableServiceLinks: false
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 400Gi
+      volumeName: btc-fullnode-data
