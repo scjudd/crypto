@@ -1,0 +1,6 @@
+bases:
+- ../../base
+resources:
+- pv-pvc.yaml
+patchesStrategicMerge:
+- statefulset.patch.yaml

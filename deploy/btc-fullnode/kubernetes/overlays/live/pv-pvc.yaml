@@ -17,3 +17,16 @@ spec:
     volumeHandle: 30d7a65b-d0e2-11ea-9f49-0a58ac146b71
     volumeAttributes:
       com.digitalocean.csi/noformat: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: btc-fullnode-data
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 400Gi
+  storageClassName: do-block-storage
+  volumeName: btc-fullnode-data

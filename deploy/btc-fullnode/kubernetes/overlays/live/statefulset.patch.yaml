@@ -1,0 +1,16 @@
+# Use the PersistentVolumeClaim that we create in this overlay, rather than
+# having the StatefulSet create one from its volumeClaimTemplates.  This
+# effectively limits us to one replica, which is fine for now.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: btc-fullnode
+spec:
+  replicas: 1
+  template:
+    spec:
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: btc-fullnode-data
+  volumeClaimTemplates: []

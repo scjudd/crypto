@@ -52,4 +52,3 @@ spec:
       resources:
         requests:
           storage: 400Gi
-      volumeName: btc-fullnode-data
