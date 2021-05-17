@@ -1,4 +1,5 @@
-use crate::{base58check, hash};
+use crate::base58check::Base58CheckString;
+use crate::hash;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -32,15 +33,10 @@ pub struct ExtendedPublicKey {
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    Base58Check(base58check::Error),
     Secp256k1(secp256k1::Error),
+    InvalidLength(usize),
+    InvalidPrefix(Vec<u8>),
     ImpossibleDerivation,
-}
-
-impl From<base58check::Error> for Error {
-    fn from(err: base58check::Error) -> Error {
-        Error::Base58Check(err)
-    }
 }
 
 impl From<secp256k1::Error> for Error {
@@ -93,15 +89,15 @@ impl From<ChildNumber> for u32 {
 }
 
 impl ExtendedPrivateKey {
-    pub fn from_base58check(v: &str) -> Result<ExtendedPrivateKey, Error> {
-        let data = base58check::decode(v)?;
+    pub fn from_base58check(v: &Base58CheckString) -> Result<ExtendedPrivateKey, Error> {
+        let data = v.decode();
 
         if data.len() != 78 {
-            return Err(base58check::Error::InvalidLength(data.len()).into());
+            return Err(Error::InvalidLength(data.len()));
         }
 
         if data[0..4] != [0x04, 0x88, 0xad, 0xe4] {
-            return Err(base58check::Error::InvalidVersion(data[0..4].to_vec()).into());
+            return Err(Error::InvalidPrefix(data[0..4].to_vec()));
         }
 
         let private_key = SecretKey::from_slice(&data[46..])?;
@@ -115,7 +111,7 @@ impl ExtendedPrivateKey {
         })
     }
 
-    pub fn to_base58check(&self) -> String {
+    pub fn to_base58check(&self) -> Base58CheckString {
         let mut data = [0u8; 78];
         data[..4].copy_from_slice(&[0x04, 0x88, 0xad, 0xe4]);
         data[4] = self.depth;
@@ -123,7 +119,7 @@ impl ExtendedPrivateKey {
         data[9..13].copy_from_slice(&u32::from(self.child_number).to_be_bytes());
         data[13..45].copy_from_slice(&self.chain_code.as_bytes());
         data[46..].copy_from_slice(&self.private_key[..]);
-        base58check::encode(&data)
+        Base58CheckString::encode(&data)
     }
 
     pub fn derive_private(&self, child_number: ChildNumber) -> Result<ExtendedPrivateKey, Error> {
@@ -165,15 +161,15 @@ impl ExtendedPrivateKey {
 }
 
 impl ExtendedPublicKey {
-    pub fn from_base58check(v: &str) -> Result<ExtendedPublicKey, Error> {
-        let data = base58check::decode(v)?;
+    pub fn from_base58check(v: &Base58CheckString) -> Result<ExtendedPublicKey, Error> {
+        let data = v.decode();
 
         if data.len() != 78 {
-            return Err(base58check::Error::InvalidLength(data.len()).into());
+            return Err(Error::InvalidLength(data.len()));
         }
 
         if data[0..4] != [0x04, 0x88, 0xb2, 0x1e] {
-            return Err(base58check::Error::InvalidVersion(data[0..4].to_vec()).into());
+            return Err(Error::InvalidPrefix(data[0..4].to_vec()));
         }
 
         let public_key = PublicKey::from_slice(&data[45..])?;
@@ -187,7 +183,7 @@ impl ExtendedPublicKey {
         })
     }
 
-    pub fn to_base58check(&self) -> String {
+    pub fn to_base58check(&self) -> Base58CheckString {
         let mut data = [0u8; 78];
         data[..4].copy_from_slice(&[0x04, 0x88, 0xb2, 0x1e]);
         data[4] = self.depth;
@@ -195,7 +191,7 @@ impl ExtendedPublicKey {
         data[9..13].copy_from_slice(&u32::from(self.child_number).to_be_bytes());
         data[13..45].copy_from_slice(&self.chain_code.as_bytes());
         data[45..].copy_from_slice(&self.public_key.serialize());
-        base58check::encode(&data)
+        Base58CheckString::encode(&data)
     }
 
     pub fn from_private(xprv: &ExtendedPrivateKey) -> ExtendedPublicKey {
@@ -249,6 +245,7 @@ impl ExtendedPublicKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::convert::TryFrom;
 
     #[test]
     fn test_extendedprivatekey_from_base58check() {
@@ -269,8 +266,8 @@ mod tests {
             ]),
         };
 
-        let b58 = "xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85";
-        let actual = ExtendedPrivateKey::from_base58check(b58).unwrap();
+        let actual = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
+        let actual = ExtendedPrivateKey::from_base58check(&actual).unwrap();
 
         assert_eq!(expected, actual);
     }
@@ -294,21 +291,25 @@ mod tests {
             ]),
         };
 
-        assert_eq!(xprv.to_base58check(), "xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85");
+        assert_eq!(xprv.to_base58check().as_str(), "xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85");
     }
 
     #[test]
     fn test_derive_normal_private_from_extendedprivatekey() {
-        let parent = ExtendedPrivateKey::from_base58check("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85").unwrap();
-        let expected = ExtendedPrivateKey::from_base58check("xprvA2G3jyjAMnHQ563QWh2aq473PXFSGnxP4o5jVwXZXAhDYLgTAAttCvdEUPcmoAeDbTJnucjTnNnxUKfuPuyVpZiFArh2shdKHCcr1bYPfu8").unwrap();
+        let parent = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
+        let parent = ExtendedPrivateKey::from_base58check(&parent).unwrap();
+        let expected = Base58CheckString::try_from("xprvA2G3jyjAMnHQ563QWh2aq473PXFSGnxP4o5jVwXZXAhDYLgTAAttCvdEUPcmoAeDbTJnucjTnNnxUKfuPuyVpZiFArh2shdKHCcr1bYPfu8".to_string()).unwrap();
+        let expected = ExtendedPrivateKey::from_base58check(&expected).unwrap();
         let actual = parent.derive_private(0.into()).unwrap();
         assert_eq!(expected, actual);
     }
 
     #[test]
     fn test_derive_hardened_private_from_extendedprivatekey() {
-        let parent = ExtendedPrivateKey::from_base58check("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85").unwrap();
-        let expected = ExtendedPrivateKey::from_base58check("xprvA2G3jyjJhSpNGLhKaUbg47ZHTpYxUmxtRwPktwV1Zb8J6MPFftxCw7JJVom3BGEor6byZrBewKMg5SF5zVXz1YPQUxs7qrHTCxZJVEKchBU").unwrap();
+        let parent = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
+        let parent = ExtendedPrivateKey::from_base58check(&parent).unwrap();
+        let expected = Base58CheckString::try_from("xprvA2G3jyjJhSpNGLhKaUbg47ZHTpYxUmxtRwPktwV1Zb8J6MPFftxCw7JJVom3BGEor6byZrBewKMg5SF5zVXz1YPQUxs7qrHTCxZJVEKchBU".to_string()).unwrap();
+        let expected = ExtendedPrivateKey::from_base58check(&expected).unwrap();
         let actual = parent.derive_private(ChildNumber::Hardened(0)).unwrap();
         assert_eq!(expected, actual);
     }
@@ -332,7 +333,8 @@ mod tests {
             ]),
         };
 
-        let actual = ExtendedPublicKey::from_base58check("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1").unwrap();
+        let actual = Base58CheckString::try_from("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1".to_string()).unwrap();
+        let actual = ExtendedPublicKey::from_base58check(&actual).unwrap();
 
         assert_eq!(expected, actual);
     }
@@ -356,28 +358,33 @@ mod tests {
             ]),
         };
 
-        assert_eq!(xpub.to_base58check(), "xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1");
+        assert_eq!(xpub.to_base58check().as_str(), "xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1");
     }
 
     #[test]
     fn test_extendedpublickey_from_private() {
-        let xprv = ExtendedPrivateKey::from_base58check("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85").unwrap();
-        let expected = ExtendedPublicKey::from_base58check("xpub6CXk3p8RpTANBYZTLbhvsMaEnzkXGibPAgyqAXe3M7rZk1vxLygbdYxMeVebhU36U9JX1Y1NU1SpvUDeSDFyYFq1CjFxwtgVw5H3HiVDmZQ").unwrap();
+        let xprv = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
+        let xprv = ExtendedPrivateKey::from_base58check(&xprv).unwrap();
+        let expected = Base58CheckString::try_from("xpub6CXk3p8RpTANBYZTLbhvsMaEnzkXGibPAgyqAXe3M7rZk1vxLygbdYxMeVebhU36U9JX1Y1NU1SpvUDeSDFyYFq1CjFxwtgVw5H3HiVDmZQ".to_string()).unwrap();
+        let expected = ExtendedPublicKey::from_base58check(&expected).unwrap();
         let actual = ExtendedPublicKey::from_private(&xprv);
         assert_eq!(expected, actual);
     }
 
     #[test]
     fn test_derive_normal_public_from_extendedpublickey() {
-        let parent = ExtendedPublicKey::from_base58check("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1").unwrap();
-        let expected = ExtendedPublicKey::from_base58check("xpub6G4dSrq5yjRz52Jr1rbSMEMQbUEoM3bcoLmGexYiLGRZp5NeNDMCBZPPVM4qagFfQjX9u6vUUnh2mBjFhR46LrkyvCUQPC7Jr958xygV72R").unwrap();
+        let parent = Base58CheckString::try_from("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1".to_string()).unwrap();
+        let parent = ExtendedPublicKey::from_base58check(&parent).unwrap();
+        let expected = Base58CheckString::try_from("xpub6G4dSrq5yjRz52Jr1rbSMEMQbUEoM3bcoLmGexYiLGRZp5NeNDMCBZPPVM4qagFfQjX9u6vUUnh2mBjFhR46LrkyvCUQPC7Jr958xygV72R".to_string()).unwrap();
+        let expected = ExtendedPublicKey::from_base58check(&expected).unwrap();
         let actual = parent.derive_public(0.into()).unwrap();
         assert_eq!(expected, actual);
     }
 
     #[test]
     fn test_derive_hardened_public_from_extendedpublickey_fails() {
-        let parent = ExtendedPublicKey::from_base58check("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1").unwrap();
+        let parent = Base58CheckString::try_from("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1".to_string()).unwrap();
+        let parent = ExtendedPublicKey::from_base58check(&parent).unwrap();
         let expected = Err(Error::ImpossibleDerivation);
         let actual = parent.derive_public(ChildNumber::Hardened(0));
         assert_eq!(expected, actual);

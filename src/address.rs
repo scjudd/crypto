@@ -1,4 +1,4 @@
-use crate::base58check;
+use crate::base58check::Base58CheckString;
 use crate::hash;
 
 use secp256k1::PublicKey;
@@ -6,10 +6,10 @@ use secp256k1::PublicKey;
 pub const PREFIX_P2PKH: &[u8] = &[0x00];
 pub const PREFIX_P2SH: &[u8] = &[0x05];
 
-pub fn p2pkh(pubkey: &PublicKey) -> String {
+pub fn p2pkh(pubkey: &PublicKey) -> Base58CheckString {
     let pubkey_hash = hash::hash160(&pubkey.serialize());
 
-    base58check::encode(
+    Base58CheckString::encode(
         &PREFIX_P2PKH
             .iter()
             .chain(pubkey_hash.iter())
@@ -18,7 +18,7 @@ pub fn p2pkh(pubkey: &PublicKey) -> String {
     )
 }
 
-pub fn p2sh_p2wpkh(pubkey: &PublicKey) -> String {
+pub fn p2sh_p2wpkh(pubkey: &PublicKey) -> Base58CheckString {
     let pubkey_hash = hash::hash160(&pubkey.serialize());
 
     let mut script_sig = Vec::from([0x00, 0x14]);
@@ -27,5 +27,5 @@ pub fn p2sh_p2wpkh(pubkey: &PublicKey) -> String {
     let mut script_hash = Vec::from(PREFIX_P2SH);
     script_hash.extend(&hash::hash160(&script_sig));
 
-    base58check::encode(&script_hash)
+    Base58CheckString::encode(&script_hash)
 }

@@ -1,5 +1,6 @@
 use crate::hash;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
+use std::fmt;
 
 /// Base58 index to Base58 character conversion table.
 ///
@@ -40,20 +41,54 @@ pub enum Error {
     InvalidChecksum { expected: [u8; 4], actual: [u8; 4] },
 }
 
-/// Encodes a byte slice into a Base58Check string.
-pub fn encode(v: &[u8]) -> String {
-    let checksum = &hash::double_sha256(v)[..4];
-    let (head, tail) = v.split_at(v.iter().position(|c| *c != 0).unwrap_or(0));
-    let tail = to_base58(&[tail, checksum]);
+/// A valid owned Base58Check string
+#[derive(Debug, PartialEq, Eq)]
+pub struct Base58CheckString(String);
 
-    head.iter()
-        .chain(tail.iter())
-        .map(|index| ALPHABET[*index as usize] as char)
-        .collect()
+impl Base58CheckString {
+    /// Encodes a byte slice into a Base58CheckString.
+    pub fn encode(v: &[u8]) -> Base58CheckString {
+        let checksum = &hash::double_sha256(v)[..4];
+        let (head, tail) = v.split_at(v.iter().position(|c| *c != 0).unwrap_or(0));
+        let tail = to_base58(&[tail, checksum]);
+
+        let string = head
+            .iter()
+            .chain(tail.iter())
+            .map(|index| ALPHABET[*index as usize] as char)
+            .collect();
+
+        Base58CheckString(string)
+    }
+
+    /// Decodes a Base58Check-encoded string.
+    pub fn decode(&self) -> Vec<u8> {
+        try_decode(&self.0).unwrap()
+    }
+
+    /// Extracts a string slice containing the entire Base58CheckString.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
-/// Decodes a Base58Check-encoded string.
-pub fn decode(v: &str) -> Result<Vec<u8>, Error> {
+impl TryFrom<String> for Base58CheckString {
+    type Error = Error;
+
+    fn try_from(v: String) -> Result<Self, Self::Error> {
+        try_decode(&v)?;
+        Ok(Base58CheckString(v))
+    }
+}
+
+impl fmt::Display for Base58CheckString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Attempt to decode an allegedly Base58Check-encoded string.
+fn try_decode(v: &str) -> Result<Vec<u8>, Error> {
     let indexes = v
         .bytes()
         .enumerate()
@@ -152,28 +187,31 @@ mod tests {
 
     #[test]
     fn test_encode() {
-        assert_eq!(encode(b"abc"), "4h3c6RH52R");
-        assert_eq!(encode(b"\0hello\0"), "16sBRWytR3DeJdK");
+        assert_eq!(Base58CheckString::encode(b"abc").as_str(), "4h3c6RH52R");
+        assert_eq!(
+            Base58CheckString::encode(b"\0hello\0").as_str(),
+            "16sBRWytR3DeJdK"
+        );
     }
 
     #[test]
     fn test_decode_ok() {
-        assert_eq!(decode("4h3c6RH52R").unwrap(), b"abc");
-        assert_eq!(decode("16sBRWytR3DeJdK").unwrap(), b"\0hello\0");
+        assert_eq!(try_decode("4h3c6RH52R").unwrap(), b"abc");
+        assert_eq!(try_decode("16sBRWytR3DeJdK").unwrap(), b"\0hello\0");
     }
 
     #[test]
     fn test_decode_err() {
-        assert_eq!(decode(""), Err(Error::InvalidLength(0)));
+        assert_eq!(try_decode(""), Err(Error::InvalidLength(0)));
         assert_eq!(
-            decode("123I"),
+            try_decode("123I"),
             Err(Error::InvalidCharacter {
                 position: 3,
                 character: 'I'
             })
         );
         assert_eq!(
-            decode("16sBRWytR3DeJdL"),
+            try_decode("16sBRWytR3DeJdL"),
             Err(Error::InvalidChecksum {
                 expected: [168, 184, 94, 231],
                 actual: [168, 184, 94, 230]
