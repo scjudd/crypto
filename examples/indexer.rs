@@ -18,14 +18,7 @@ fn main() {
     loop {
         println!("processing block {}: {}", block.height, block.hash);
 
-        println!(
-            "transactions: {:#?}",
-            block
-                .tx
-                .iter()
-                .map(|tx| &tx.hash)
-                .collect::<Vec<&rpc::types::TransactionHash>>()
-        );
+        println!("transactions: {:#?}", block.tx);
 
         block = client
             .get_block(block.next_block_hash.unwrap())

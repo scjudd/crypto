@@ -1,5 +1,5 @@
 use crate::rpc::requests::*;
-use crate::rpc::types::{Block, BlockHash, Error, Transaction};
+use crate::rpc::types::{Block, BlockHash, Error};
 
 use std::convert::TryInto;
 

@@ -1,6 +1,4 @@
-use serde::de::Visitor;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+use serde::Deserialize;
 
 pub type BlockHash = String;
 pub type TransactionHash = String;
@@ -9,16 +7,9 @@ pub type TransactionHash = String;
 pub struct Block {
     pub hash: BlockHash,
     pub height: u64,
-    pub tx: Vec<Transaction>,
+    pub tx: Vec<String>,
     #[serde(rename = "nextblockhash")]
     pub next_block_hash: Option<BlockHash>,
-}
-
-#[derive(Deserialize, PartialEq, Debug)]
-pub struct Transaction {
-    pub hash: TransactionHash,
-    pub vin: Vec<serde_json::Value>,
-    pub vout: Vec<serde_json::Value>,
 }
 
 #[derive(Debug)]
