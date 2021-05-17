@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use crate::base58check::Base58CheckString;
 use crate::hash;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
@@ -89,39 +90,6 @@ impl From<ChildNumber> for u32 {
 }
 
 impl ExtendedPrivateKey {
-    pub fn from_base58check(v: &Base58CheckString) -> Result<ExtendedPrivateKey, Error> {
-        let data = v.decode();
-
-        if data.len() != 78 {
-            return Err(Error::InvalidLength(data.len()));
-        }
-
-        if data[0..4] != [0x04, 0x88, 0xad, 0xe4] {
-            return Err(Error::InvalidPrefix(data[0..4].to_vec()));
-        }
-
-        let private_key = SecretKey::from_slice(&data[46..])?;
-
-        Ok(ExtendedPrivateKey {
-            depth: data[4],
-            parent_fingerprint: copy_from_slice!([0u8; 4], &data[5..9]).into(),
-            child_number: u32::from_be_bytes(copy_from_slice!([0u8; 4], &data[9..13])).into(),
-            chain_code: copy_from_slice!([0u8; 32], &data[13..45]).into(),
-            private_key,
-        })
-    }
-
-    pub fn to_base58check(&self) -> Base58CheckString {
-        let mut data = [0u8; 78];
-        data[..4].copy_from_slice(&[0x04, 0x88, 0xad, 0xe4]);
-        data[4] = self.depth;
-        data[5..9].copy_from_slice(&self.parent_fingerprint.as_bytes());
-        data[9..13].copy_from_slice(&u32::from(self.child_number).to_be_bytes());
-        data[13..45].copy_from_slice(&self.chain_code.as_bytes());
-        data[46..].copy_from_slice(&self.private_key[..]);
-        Base58CheckString::encode(&data)
-    }
-
     pub fn derive_private(&self, child_number: ChildNumber) -> Result<ExtendedPrivateKey, Error> {
         let secp = Secp256k1::new();
         let public_key = PublicKey::from_secret_key(&secp, &self.private_key);
@@ -160,53 +128,46 @@ impl ExtendedPrivateKey {
     }
 }
 
-impl ExtendedPublicKey {
-    pub fn from_base58check(v: &Base58CheckString) -> Result<ExtendedPublicKey, Error> {
+impl TryFrom<&Base58CheckString> for ExtendedPrivateKey {
+    type Error = Error;
+
+    fn try_from(v: &Base58CheckString) -> Result<Self, Self::Error> {
         let data = v.decode();
 
         if data.len() != 78 {
             return Err(Error::InvalidLength(data.len()));
         }
 
-        if data[0..4] != [0x04, 0x88, 0xb2, 0x1e] {
+        if data[0..4] != [0x04, 0x88, 0xad, 0xe4] {
             return Err(Error::InvalidPrefix(data[0..4].to_vec()));
         }
 
-        let public_key = PublicKey::from_slice(&data[45..])?;
+        let private_key = SecretKey::from_slice(&data[46..])?;
 
-        Ok(ExtendedPublicKey {
+        Ok(ExtendedPrivateKey {
             depth: data[4],
             parent_fingerprint: copy_from_slice!([0u8; 4], &data[5..9]).into(),
             child_number: u32::from_be_bytes(copy_from_slice!([0u8; 4], &data[9..13])).into(),
             chain_code: copy_from_slice!([0u8; 32], &data[13..45]).into(),
-            public_key,
+            private_key,
         })
     }
+}
 
-    pub fn to_base58check(&self) -> Base58CheckString {
+impl From<&ExtendedPrivateKey> for Base58CheckString {
+    fn from(v: &ExtendedPrivateKey) -> Base58CheckString {
         let mut data = [0u8; 78];
-        data[..4].copy_from_slice(&[0x04, 0x88, 0xb2, 0x1e]);
-        data[4] = self.depth;
-        data[5..9].copy_from_slice(&self.parent_fingerprint.as_bytes());
-        data[9..13].copy_from_slice(&u32::from(self.child_number).to_be_bytes());
-        data[13..45].copy_from_slice(&self.chain_code.as_bytes());
-        data[45..].copy_from_slice(&self.public_key.serialize());
+        data[..4].copy_from_slice(&[0x04, 0x88, 0xad, 0xe4]);
+        data[4] = v.depth;
+        data[5..9].copy_from_slice(&v.parent_fingerprint.as_bytes());
+        data[9..13].copy_from_slice(&u32::from(v.child_number).to_be_bytes());
+        data[13..45].copy_from_slice(&v.chain_code.as_bytes());
+        data[46..].copy_from_slice(&v.private_key[..]);
         Base58CheckString::encode(&data)
     }
+}
 
-    pub fn from_private(xprv: &ExtendedPrivateKey) -> ExtendedPublicKey {
-        let secp = Secp256k1::new();
-        let public_key = PublicKey::from_secret_key(&secp, &xprv.private_key);
-
-        ExtendedPublicKey {
-            depth: xprv.depth,
-            parent_fingerprint: xprv.parent_fingerprint,
-            child_number: xprv.child_number,
-            chain_code: xprv.chain_code,
-            public_key,
-        }
-    }
-
+impl ExtendedPublicKey {
     pub fn derive_public(&self, child_number: ChildNumber) -> Result<ExtendedPublicKey, Error> {
         let mut hmac_data = [0u8; 37];
 
@@ -242,10 +203,63 @@ impl ExtendedPublicKey {
     }
 }
 
+impl TryFrom<&Base58CheckString> for ExtendedPublicKey {
+    type Error = Error;
+
+    fn try_from(v: &Base58CheckString) -> Result<Self, Self::Error> {
+        let data = v.decode();
+
+        if data.len() != 78 {
+            return Err(Error::InvalidLength(data.len()));
+        }
+
+        if data[0..4] != [0x04, 0x88, 0xb2, 0x1e] {
+            return Err(Error::InvalidPrefix(data[0..4].to_vec()));
+        }
+
+        let public_key = PublicKey::from_slice(&data[45..])?;
+
+        Ok(ExtendedPublicKey {
+            depth: data[4],
+            parent_fingerprint: copy_from_slice!([0u8; 4], &data[5..9]).into(),
+            child_number: u32::from_be_bytes(copy_from_slice!([0u8; 4], &data[9..13])).into(),
+            chain_code: copy_from_slice!([0u8; 32], &data[13..45]).into(),
+            public_key,
+        })
+    }
+}
+
+impl From<&ExtendedPublicKey> for Base58CheckString {
+    fn from(v: &ExtendedPublicKey) -> Self {
+        let mut data = [0u8; 78];
+        data[..4].copy_from_slice(&[0x04, 0x88, 0xb2, 0x1e]);
+        data[4] = v.depth;
+        data[5..9].copy_from_slice(&v.parent_fingerprint.as_bytes());
+        data[9..13].copy_from_slice(&u32::from(v.child_number).to_be_bytes());
+        data[13..45].copy_from_slice(&v.chain_code.as_bytes());
+        data[45..].copy_from_slice(&v.public_key.serialize());
+        Base58CheckString::encode(&data)
+    }
+}
+
+impl From<&ExtendedPrivateKey> for ExtendedPublicKey {
+    fn from(xprv: &ExtendedPrivateKey) -> Self {
+        let secp = Secp256k1::new();
+        let public_key = PublicKey::from_secret_key(&secp, &xprv.private_key);
+
+        ExtendedPublicKey {
+            depth: xprv.depth,
+            parent_fingerprint: xprv.parent_fingerprint,
+            child_number: xprv.child_number,
+            chain_code: xprv.chain_code,
+            public_key,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::TryFrom;
 
     #[test]
     fn test_extendedprivatekey_from_base58check() {
@@ -267,13 +281,13 @@ mod tests {
         };
 
         let actual = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
-        let actual = ExtendedPrivateKey::from_base58check(&actual).unwrap();
+        let actual = ExtendedPrivateKey::try_from(&actual).unwrap();
 
         assert_eq!(expected, actual);
     }
 
     #[test]
-    fn test_extendedprivatekey_to_base58check() {
+    fn test_extendedprivatekey_into_base58check() {
         let xprv = ExtendedPrivateKey {
             depth: 3,
             parent_fingerprint: Fingerprint([0x77, 0x92, 0x0d, 0x54]),
@@ -291,15 +305,18 @@ mod tests {
             ]),
         };
 
-        assert_eq!(xprv.to_base58check().as_str(), "xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85");
+        let expected = "xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85";
+        let actual = Base58CheckString::from(&xprv);
+
+        assert_eq!(expected, actual.as_str());
     }
 
     #[test]
     fn test_derive_normal_private_from_extendedprivatekey() {
         let parent = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
-        let parent = ExtendedPrivateKey::from_base58check(&parent).unwrap();
+        let parent = ExtendedPrivateKey::try_from(&parent).unwrap();
         let expected = Base58CheckString::try_from("xprvA2G3jyjAMnHQ563QWh2aq473PXFSGnxP4o5jVwXZXAhDYLgTAAttCvdEUPcmoAeDbTJnucjTnNnxUKfuPuyVpZiFArh2shdKHCcr1bYPfu8".to_string()).unwrap();
-        let expected = ExtendedPrivateKey::from_base58check(&expected).unwrap();
+        let expected = ExtendedPrivateKey::try_from(&expected).unwrap();
         let actual = parent.derive_private(0.into()).unwrap();
         assert_eq!(expected, actual);
     }
@@ -307,9 +324,9 @@ mod tests {
     #[test]
     fn test_derive_hardened_private_from_extendedprivatekey() {
         let parent = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
-        let parent = ExtendedPrivateKey::from_base58check(&parent).unwrap();
+        let parent = ExtendedPrivateKey::try_from(&parent).unwrap();
         let expected = Base58CheckString::try_from("xprvA2G3jyjJhSpNGLhKaUbg47ZHTpYxUmxtRwPktwV1Zb8J6MPFftxCw7JJVom3BGEor6byZrBewKMg5SF5zVXz1YPQUxs7qrHTCxZJVEKchBU".to_string()).unwrap();
-        let expected = ExtendedPrivateKey::from_base58check(&expected).unwrap();
+        let expected = ExtendedPrivateKey::try_from(&expected).unwrap();
         let actual = parent.derive_private(ChildNumber::Hardened(0)).unwrap();
         assert_eq!(expected, actual);
     }
@@ -334,13 +351,13 @@ mod tests {
         };
 
         let actual = Base58CheckString::try_from("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1".to_string()).unwrap();
-        let actual = ExtendedPublicKey::from_base58check(&actual).unwrap();
+        let actual = ExtendedPublicKey::try_from(&actual).unwrap();
 
         assert_eq!(expected, actual);
     }
 
     #[test]
-    fn test_extendedpublickey_to_base58check() {
+    fn test_extendedpublickey_into_base58check() {
         let xpub = ExtendedPublicKey {
             depth: 4,
             parent_fingerprint: Fingerprint([0xe9, 0x63, 0x32, 0x5c]),
@@ -358,25 +375,28 @@ mod tests {
             ]),
         };
 
-        assert_eq!(xpub.to_base58check().as_str(), "xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1");
+        let expected = "xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1";
+        let actual = Base58CheckString::from(&xpub);
+
+        assert_eq!(expected, actual.as_str());
     }
 
     #[test]
     fn test_extendedpublickey_from_private() {
         let xprv = Base58CheckString::try_from("xprv9yYPeJbXz5c4y4UzEaAvWDdWExv2sFsXoU4EN9ERnnKasDbooSNM5kdsoCPh5UMvAvTqqh1oykDxqGsRouyn2xKW2eyEW7R2ie7K7jF9P85".to_string()).unwrap();
-        let xprv = ExtendedPrivateKey::from_base58check(&xprv).unwrap();
+        let xprv = ExtendedPrivateKey::try_from(&xprv).unwrap();
         let expected = Base58CheckString::try_from("xpub6CXk3p8RpTANBYZTLbhvsMaEnzkXGibPAgyqAXe3M7rZk1vxLygbdYxMeVebhU36U9JX1Y1NU1SpvUDeSDFyYFq1CjFxwtgVw5H3HiVDmZQ".to_string()).unwrap();
-        let expected = ExtendedPublicKey::from_base58check(&expected).unwrap();
-        let actual = ExtendedPublicKey::from_private(&xprv);
+        let expected = ExtendedPublicKey::try_from(&expected).unwrap();
+        let actual = ExtendedPublicKey::from(&xprv);
         assert_eq!(expected, actual);
     }
 
     #[test]
     fn test_derive_normal_public_from_extendedpublickey() {
         let parent = Base58CheckString::try_from("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1".to_string()).unwrap();
-        let parent = ExtendedPublicKey::from_base58check(&parent).unwrap();
+        let parent = ExtendedPublicKey::try_from(&parent).unwrap();
         let expected = Base58CheckString::try_from("xpub6G4dSrq5yjRz52Jr1rbSMEMQbUEoM3bcoLmGexYiLGRZp5NeNDMCBZPPVM4qagFfQjX9u6vUUnh2mBjFhR46LrkyvCUQPC7Jr958xygV72R".to_string()).unwrap();
-        let expected = ExtendedPublicKey::from_base58check(&expected).unwrap();
+        let expected = ExtendedPublicKey::try_from(&expected).unwrap();
         let actual = parent.derive_public(0.into()).unwrap();
         assert_eq!(expected, actual);
     }
@@ -384,7 +404,7 @@ mod tests {
     #[test]
     fn test_derive_hardened_public_from_extendedpublickey_fails() {
         let parent = Base58CheckString::try_from("xpub6FFQ9VG4C9qhWBgoa6nURfEkYAbkE6pyScvERKKniwfxGqFabPGUo7uaiHfBb2vpKqdiFkKW1Wab9T2EJahdWXmHXXLV6F53xtaae4uaqR1".to_string()).unwrap();
-        let parent = ExtendedPublicKey::from_base58check(&parent).unwrap();
+        let parent = ExtendedPublicKey::try_from(&parent).unwrap();
         let expected = Err(Error::ImpossibleDerivation);
         let actual = parent.derive_public(ChildNumber::Hardened(0));
         assert_eq!(expected, actual);
