@@ -1,7 +1,7 @@
-use std::convert::TryFrom;
 use crate::base58check::Base58CheckString;
 use crate::hash;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Fingerprint([u8; 4]);
@@ -132,7 +132,7 @@ impl TryFrom<&Base58CheckString> for ExtendedPrivateKey {
     type Error = Error;
 
     fn try_from(v: &Base58CheckString) -> Result<Self, Self::Error> {
-        let data = v.decode();
+        let data = v.into_bytes();
 
         if data.len() != 78 {
             return Err(Error::InvalidLength(data.len()));
@@ -163,7 +163,7 @@ impl From<&ExtendedPrivateKey> for Base58CheckString {
         data[9..13].copy_from_slice(&u32::from(v.child_number).to_be_bytes());
         data[13..45].copy_from_slice(&v.chain_code.as_bytes());
         data[46..].copy_from_slice(&v.private_key[..]);
-        Base58CheckString::encode(&data)
+        Base58CheckString::from_bytes(&data)
     }
 }
 
@@ -207,7 +207,7 @@ impl TryFrom<&Base58CheckString> for ExtendedPublicKey {
     type Error = Error;
 
     fn try_from(v: &Base58CheckString) -> Result<Self, Self::Error> {
-        let data = v.decode();
+        let data = v.into_bytes();
 
         if data.len() != 78 {
             return Err(Error::InvalidLength(data.len()));
@@ -238,7 +238,7 @@ impl From<&ExtendedPublicKey> for Base58CheckString {
         data[9..13].copy_from_slice(&u32::from(v.child_number).to_be_bytes());
         data[13..45].copy_from_slice(&v.chain_code.as_bytes());
         data[45..].copy_from_slice(&v.public_key.serialize());
-        Base58CheckString::encode(&data)
+        Base58CheckString::from_bytes(&data)
     }
 }
 

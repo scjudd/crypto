@@ -9,7 +9,7 @@ pub const PREFIX_P2SH: &[u8] = &[0x05];
 pub fn p2pkh(pubkey: &PublicKey) -> Base58CheckString {
     let pubkey_hash = hash::hash160(&pubkey.serialize());
 
-    Base58CheckString::encode(
+    Base58CheckString::from_bytes(
         &PREFIX_P2PKH
             .iter()
             .chain(pubkey_hash.iter())
@@ -27,5 +27,5 @@ pub fn p2sh_p2wpkh(pubkey: &PublicKey) -> Base58CheckString {
     let mut script_hash = Vec::from(PREFIX_P2SH);
     script_hash.extend(&hash::hash160(&script_sig));
 
-    Base58CheckString::encode(&script_hash)
+    Base58CheckString::from_bytes(&script_hash)
 }

@@ -46,7 +46,8 @@ pub struct Base58CheckString(String);
 
 impl Base58CheckString {
     /// Encodes a byte slice into a Base58CheckString.
-    pub fn encode(v: &[u8]) -> Base58CheckString {
+    pub fn from_bytes<T: AsRef<[u8]>>(v: T) -> Base58CheckString {
+        let v = v.as_ref();
         let checksum = &hash::double_sha256(v)[..4];
         let (head, tail) = v.split_at(v.iter().position(|c| *c != 0).unwrap_or(0));
         let tail = to_base58(&[tail, checksum]);
@@ -61,7 +62,7 @@ impl Base58CheckString {
     }
 
     /// Decodes a Base58Check-encoded string.
-    pub fn decode(&self) -> Vec<u8> {
+    pub fn into_bytes(&self) -> Vec<u8> {
         try_decode(&self.0).unwrap()
     }
 
@@ -185,32 +186,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_encode() {
-        assert_eq!(Base58CheckString::encode(b"abc").as_str(), "4h3c6RH52R");
+    fn test_from_bytes() {
         assert_eq!(
-            Base58CheckString::encode(b"\0hello\0").as_str(),
-            "16sBRWytR3DeJdK"
+            Base58CheckString::from_bytes(b"abc"),
+            Base58CheckString("4h3c6RH52R".to_string()),
+        );
+
+        assert_eq!(
+            Base58CheckString::from_bytes(b"\0hello\0"),
+            Base58CheckString("16sBRWytR3DeJdK".to_string()),
         );
     }
 
     #[test]
-    fn test_decode_ok() {
-        assert_eq!(try_decode("4h3c6RH52R").unwrap(), b"abc");
-        assert_eq!(try_decode("16sBRWytR3DeJdK").unwrap(), b"\0hello\0");
+    fn test_into_bytes() {
+        assert_eq!(
+            Base58CheckString("4h3c6RH52R".to_string()).into_bytes(),
+            b"abc"
+        );
+        assert_eq!(
+            Base58CheckString("16sBRWytR3DeJdK".to_string()).into_bytes(),
+            b"\0hello\0"
+        );
     }
 
     #[test]
-    fn test_decode_err() {
-        assert_eq!(try_decode(""), Err(Error::InvalidLength(0)));
+    fn test_conversions() {
         assert_eq!(
-            try_decode("123I"),
+            Base58CheckString::try_from("4h3c6RH52R".to_string()),
+            Ok(Base58CheckString("4h3c6RH52R".to_string())),
+        );
+
+        assert_eq!(
+            Base58CheckString::try_from("".to_string()),
+            Err(Error::InvalidLength(0))
+        );
+
+        assert_eq!(
+            Base58CheckString::try_from("123I".to_string()),
             Err(Error::InvalidCharacter {
                 position: 3,
                 character: 'I'
             })
         );
+
         assert_eq!(
-            try_decode("16sBRWytR3DeJdL"),
+            Base58CheckString::try_from("16sBRWytR3DeJdL".to_string()),
             Err(Error::InvalidChecksum {
                 expected: [168, 184, 94, 231],
                 actual: [168, 184, 94, 230]
