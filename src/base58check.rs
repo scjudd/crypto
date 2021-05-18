@@ -37,7 +37,6 @@ const INDEXES: &[u8] = &[
 pub enum Error {
     InvalidCharacter { character: char, position: usize },
     InvalidLength(usize),
-    InvalidVersion(Vec<u8>),
     InvalidChecksum { expected: [u8; 4], actual: [u8; 4] },
 }
 
